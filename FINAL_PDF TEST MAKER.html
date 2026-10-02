@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>PDF Test Maker</title>
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);--bg:#f6f7fb;--card:#fff;--tx:#1b1f2a;--mu:#667085;--pr:#4f46e5;--bd:#e3e6ee;--ok:#16a34a;--no:#dc2626;--wn:#d97706}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f1220;--card:#181c2e;--tx:#e8eaf3;--mu:#9aa3b8;--pr:#818cf8;--bd:#2a3050;--ok:#4ade80;--no:#f87171;--wn:#fbbf24}}
+:root[data-theme="dark"]{--bg:#0f1220;--card:#181c2e;--tx:#e8eaf3;--mu:#9aa3b8;--pr:#818cf8;--bd:#2a3050;--ok:#4ade80;--no:#f87171;--wn:#fbbf24}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+main{max-width:760px;margin:0 auto;padding:20px 16px 60px}
+h1{font-size:1.6rem;margin:.2em 0}h2{font-size:1.1rem;margin:0 0 10px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:18px;margin:14px 0}
+.mu{color:var(--mu);font-size:.9rem}
+button{font:inherit;cursor:pointer;border:0;border-radius:10px;padding:10px 18px;background:var(--pr);color:#fff;font-weight:600}
+button:disabled{opacity:.4;cursor:not-allowed}button.sec{background:transparent;color:var(--pr);border:1px solid var(--pr)}
+.drop{border:2px dashed var(--bd);border-radius:12px;padding:26px;text-align:center;cursor:pointer}.drop:hover{border-color:var(--pr)}
+.file{display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--bd);font-size:.92rem}
+.file span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.st-reading{color:var(--wn)}.st-ready{color:var(--ok)}.st-failed{color:var(--no)}
+.row{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--bd);flex-wrap:wrap}
+.row label{font-weight:600;min-width:90px}.cnt{display:none;align-items:center;gap:8px}.cnt.on{display:flex}
+input[type=number]{width:80px;padding:7px;border-radius:8px;border:1px solid var(--bd);background:var(--bg);color:var(--tx);font:inherit}
+textarea{width:100%;min-height:130px;padding:10px;border-radius:10px;border:1px solid var(--bd);background:var(--bg);color:var(--tx);font:inherit;resize:vertical}
+.opt{display:block;padding:10px 12px;border:1px solid var(--bd);border-radius:10px;margin:8px 0;cursor:pointer}
+.opt.sel{border-color:var(--pr);background:color-mix(in srgb,var(--pr) 12%,transparent)}.opt input{margin-right:8px}
+.bar{height:6px;background:var(--bd);border-radius:6px;overflow:hidden;margin-bottom:12px}.bar div{height:100%;background:var(--pr);transition:width .2s}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}.stat{text-align:center;padding:14px;border:1px solid var(--bd);border-radius:12px}.stat b{display:block;font-size:1.6rem}
+.tag{display:inline-block;font-size:.75rem;padding:2px 8px;border-radius:99px;background:var(--pr);color:#fff;margin-right:6px}
+.ans{padding:8px 10px;border-radius:8px;margin-top:6px;white-space:pre-wrap;font-size:.92rem}.you{background:color-mix(in srgb,var(--no) 12%,transparent)}.rt{background:color-mix(in srgb,var(--ok) 14%,transparent)}
+.hide{display:none}.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
+</style></head><body><main>
+<div id="home">
+<h1>📄 PDF Test Maker</h1><p class="mu">Upload one or more PDFs (scanned pages are read with OCR), choose marks and counts, then take a test.</p>
+<div class="card"><h2>1. Upload PDFs</h2>
+<div class="drop" id="drop">Click or drop PDF files here<input id="fi" type="file" accept="application/pdf" multiple hidden></div>
+<div id="files"></div></div>
+<div class="card"><h2>2. Choose questions</h2><div id="marks"></div>
+<p class="mu" id="sum">Total: 0 questions · 0 marks</p></div>
+<div class="card"><h2>3. Time duration</h2><div class="row" style="border:0"><label for="dur" style="min-width:0">Minutes</label><input id="dur" type="number" min="0" max="300" value="10"><span class="mu">Enter 0 for no time limit. When time ends, the test is submitted automatically.</span></div></div>
+<button id="gen" disabled>Generate Test</button> <span class="mu" id="hint"></span>
+</div>
+<div id="test" class="hide"></div>
+<div id="result" class="hide"></div>
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.0.5/tesseract.min.js"></script>
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const MARKS=[1,2,5,8],CHUNK={2:1,5:3,8:5},TIMEOUT=90000;
+const STOP=new Set('about above after again also because before being between both could does doing during each from further have having here into itself just more most other over same should some such than that their them then there these they this those through under until very were what when where which while will with would your the and are for not you all any can had her was one our out has his how its may who why'.split(' '));
+let files=[],test=null,idx=0,wrapper=null;
+try{pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'}catch(e){}
+
+// marks UI
+$('marks').innerHTML=MARKS.map(m=>`<div class="row"><label><input type="checkbox" data-m="${m}"> ${m} mark${m>1?'s':''}</label>
+<div class="cnt" id="c${m}"><span class="mu">How many?</span><input type="number" min="1" max="50" value="5" data-n="${m}"></div>
+<span class="mu">${m==1?'MCQ':'Written answer'}</span></div>`).join('');
+$('marks').addEventListener('input',e=>{const m=e.target.dataset.m;if(m)$('c'+m).classList.toggle('on',e.target.checked);update()});
+function plan(){const p={};MARKS.forEach(m=>{if(document.querySelector(`[data-m="${m}"]`).checked){const n=Math.max(0,Math.min(50,+document.querySelector(`[data-n="${m}"]`).value||0));if(n)p[m]=n}});return p}
+function update(){const p=plan();let q=0,t=0;for(const m in p){q+=p[m];t+=p[m]*m}
+ $('sum').textContent=`Total: ${q} questions · ${t} marks`;
+ const busy=files.some(f=>f.status==='reading'),ready=files.filter(f=>f.status==='ready').length;
+ $('gen').disabled=busy||!ready||!q;
+ $('hint').textContent=busy?'Reading PDFs…':!files.length?'Add a PDF first.':!ready?'No readable PDF.':!q?'Select marks & counts.':''}
+
+// files
+$('drop').onclick=()=>$('fi').click();
+$('drop').ondragover=e=>e.preventDefault();
+$('drop').ondrop=e=>{e.preventDefault();addFiles(e.dataTransfer.files)};
+$('fi').onchange=e=>{addFiles(e.target.files);e.target.value=''};
+function render(){$('files').innerHTML=files.map((f,i)=>`<div class="file"><span>${esc(f.name)}</span><span><span class="st-${f.status}">${f.msg}</span> <a href="#" data-rm="${i}" style="color:var(--mu)">✕</a></span></div>`).join('');
+ document.querySelectorAll('[data-rm]').forEach(a=>a.onclick=e=>{e.preventDefault();files.splice(+a.dataset.rm,1);render();update()})}
+function addFiles(list){[...list].filter(f=>/pdf$/i.test(f.type)||/\.pdf$/i.test(f.name)).forEach(file=>{
+ const f={name:file.name,status:'reading',msg:'Reading…',sents:[],used:new Set()};files.push(f);
+ Promise.race([readPdf(file,f),new Promise((_,rj)=>setTimeout(()=>rj(new Error('Timed out')),TIMEOUT))])
+ .then(t=>{f.dead=false;f.sents=split(t);if(f.sents.length<3)throw new Error('Not enough text');f.status='ready';f.msg='Ready'})
+ .catch(e=>{f.dead=true;f.status='failed';f.msg='Failed: '+(e.message||'error')})
+ .finally(()=>{render();update()})});render();update()}
+async function readPdf(file,f){
+ const pdf=await pdfjsLib.getDocument({data:await file.arrayBuffer()}).promise;let out='';
+ for(let p=1;p<=pdf.numPages;p++){if(f.dead)return out;
+  const page=await pdf.getPage(p);const tc=await page.getTextContent();let t=tc.items.map(i=>i.str).join(' ');
+  if(t.replace(/\s/g,'').length<25){ // scanned page → OCR
+   f.msg=`OCR page ${p}/${pdf.numPages}…`;render();
+   try{const v=page.getViewport({scale:2});const c=document.createElement('canvas');c.width=v.width;c.height=v.height;
+    await page.render({canvasContext:c.getContext('2d'),viewport:v}).promise;
+    t=(await Tesseract.recognize(c,'eng')).data.text}catch(e){t=t||''}}
+  out+=' '+t;f.msg=`Reading ${p}/${pdf.numPages}…`;if(p%3==0)render()}
+ return out}
+function split(t){return t.replace(/\s+/g,' ').split(/(?<=[.!?])\s+(?=[A-Z0-9"'(])/).map(s=>s.trim()).filter(s=>s.split(' ').length>=6&&s.length<400)}
+
+// generation
+const rnd=n=>Math.floor(Math.random()*n),shuf=a=>{a=[...a];for(let i=a.length-1;i>0;i--){const j=rnd(i+1);[a[i],a[j]]=[a[j],a[i]]}return a};
+const words=s=>(s.toLowerCase().match(/[a-z][a-z'-]{2,}/g)||[]);
+const stem=w=>w.replace(/(ing|ed|es|s|ly)$/,'');
+function keys(t,n){const c={};words(t).forEach(w=>{if(w.length>3&&!STOP.has(w))c[stem(w)]=(c[stem(w)]||0)+1});return Object.entries(c).sort((a,b)=>b[1]-a[1]).slice(0,n).map(x=>x[0])}
+function pickStart(f,k){let c=[];for(let i=0;i+k<=f.sents.length;i++){let ok=true;for(let j=i;j<i+k;j++)if(f.used.has(j)){ok=false;break}if(ok)c.push(i)}
+ if(!c.length){f.used.clear();for(let i=0;i+k<=f.sents.length;i++)c.push(i)}
+ if(!c.length)return 0;const s=c[rnd(c.length)];for(let j=s;j<s+k&&j<f.sents.length;j++)f.used.add(j);return s}
+function mcq(f,all){
+ for(let tries=0;tries<30;tries++){const i=pickStart(f,1),s=f.sents[i];if(!s)continue;
+  const ws=s.split(' ');if(ws.length<8||ws.length>40)continue;
+  const cand=ws.map((w,j)=>[w.replace(/[^A-Za-z0-9-]/g,''),j]).filter(([w])=>w.length>=5&&!STOP.has(w.toLowerCase()));
+  if(!cand.length)continue;const [ans,j]=cand[rnd(cand.length)];
+  const have=new Set(words(s));const pool=[...new Set(all.flatMap(x=>x.sents.join(' ').split(/\s+/)).map(w=>w.replace(/[^A-Za-z0-9-]/g,'')).filter(w=>w.length>=4&&Math.abs(w.length-ans.length)<=3&&!STOP.has(w.toLowerCase())&&!have.has(w.toLowerCase())&&w[0]===w[0].toUpperCase()===(ans[0]===ans[0].toUpperCase())))];
+  if(pool.length<3)continue;const opts=shuf([ans,...shuf(pool).slice(0,3)]);
+  const q=ws.map((w,k)=>k===j?w.replace(ans,'_____'):w).join(' ');
+  return{marks:1,type:'mcq',q:'Fill in the blank: '+q,opts,ans,src:f.name}}
+ return null}
+function written(f,m){const k=CHUNK[m],s=pickStart(f,k),model=f.sents.slice(s,s+k).join(' ');
+ const kw=keys(model,3);const topic=kw.length?kw.join(', '):'the passage';
+ const verb=m==2?'Briefly explain':m==5?'Explain in detail':'Discuss comprehensively';
+ return{marks:m,type:'text',q:`${verb} the following as covered in your material: ${topic}.`,ans:model,mk:keys(model,12),src:f.name}}
+function build(plan){const rd=files.filter(f=>f.status==='ready');let rr=rnd(rd.length),qs=[];
+ for(const m in plan)for(let i=0;i<plan[m];i++){let q=null;
+  for(let a=0;a<rd.length&&!q;a++){const f=rd[(rr+a)%rd.length];q=+m===1?mcq(f,rd):written(f,+m)}
+  rr++;if(q)qs.push(q)}
+ return shuf(qs).sort((a,b)=>a.marks-b.marks)} // 1-mark first, then 2, 5, 8
+
+// test flow
+let dur=0,timer=null,endAt=0,timeUp=false;
+$('gen').onclick=()=>{wrapper=plan();dur=Math.max(0,Math.min(300,+$('dur').value||0));start()};
+function start(){test=build(wrapper);if(!test.length){alert('Could not create questions from these PDFs.');return}
+ test.forEach(q=>q.user='');idx=0;timeUp=false;clearInterval(timer);
+ if(dur>0){endAt=Date.now()+dur*60000;timer=setInterval(tick,500)}
+ show('test');draw()}
+function tick(){const left=Math.max(0,endAt-Date.now()),el=$('tm');
+ if(el){const s=Math.ceil(left/1000);el.textContent='⏱ '+String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');el.style.background=s<=30?'var(--no)':'var(--wn)'}
+ if(left<=0){timeUp=true;finish()}}
+function show(id){['home','test','result'].forEach(x=>$(x).classList.toggle('hide',x!==id));scrollTo(0,0)}
+function draw(){const q=test[idx],last=idx===test.length-1;
+ let body=q.type==='mcq'?q.opts.map((o,i)=>`<label class="opt ${q.user===o?'sel':''}"><input type="radio" name="o" value="${i}" ${q.user===o?'checked':''}>${esc(o)}</label>`).join(''):`<textarea id="ta" placeholder="Type your answer here…">${esc(q.user)}</textarea>`;
+ $('test').innerHTML=`<div class="card"><div class="bar"><div style="width:${idx/test.length*100}%"></div></div>
+ <p class="mu">${dur>0?'<span id="tm" class="tag" style="float:right;margin:0"></span>':''}Question ${idx+1} of ${test.length}</p><p><span class="tag">${q.marks} mark${q.marks>1?'s':''}</span><b>${esc(q.q)}</b></p>${body}
+ <div class="actions"><button id="nx" ${q.user.trim()?'':'disabled'}>${last?'Finish Test':'Next →'}</button></div></div>`;
+ const nx=$('nx');
+ if(q.type==='mcq')document.querySelectorAll('input[name=o]').forEach(r=>r.onchange=()=>{q.user=q.opts[+r.value];draw()});
+ else $('ta').oninput=e=>{q.user=e.target.value;nx.disabled=!q.user.trim()};
+ nx.onclick=()=>{if(last)finish();else{idx++;draw()}};if(dur>0)tick()}
+function grade(q){if(!q.user.trim()){q.right=false;q.score=0;return}
+ if(q.type==='mcq'){q.score=q.user===q.ans?1:0;q.right=!!q.score;return}
+ const u=new Set(words(q.user).map(stem));const hit=q.mk.filter(k=>u.has(k)).length;const r=q.mk.length?hit/q.mk.length:0;
+ q.right=r>=0.35;q.score=q.right?q.marks:Math.round(q.marks*Math.min(1,r/0.35)*2)/2}
+function finish(){clearInterval(timer);timer=null;test.forEach(grade);const att=test.filter(q=>q.user.trim()).length;const R=test.filter(q=>q.right).length,tot=test.reduce((a,q)=>a+q.marks,0),sc=test.reduce((a,q)=>a+q.score,0);
+ $('result').innerHTML=`<h1>${timeUp?'⏱ Time is up – test submitted':'Test complete 🎉'}</h1><div class="card"><div class="stats">
+ <div class="stat"><b>${att}/${test.length}</b>Attempted</div><div class="stat"><b style="color:var(--ok)">${R}</b>Right</div>
+ <div class="stat"><b style="color:var(--no)">${test.length-R}</b>Wrong${att<test.length?' (incl. unanswered)':''}</div><div class="stat"><b>${sc}/${tot}</b>Marks</div></div>
+ <p class="mu">Written answers are auto-marked by keyword match against the PDF text, so compare with the model answer below.</p>
+ <div class="actions"><button id="again">Take a new test</button><button class="sec" id="gohome">Go to home page</button></div></div>
+ <h2>Review</h2>`+test.map((q,i)=>`<div class="card"><p><span class="tag" style="background:${q.right?'var(--ok)':'var(--no)'}">${q.right?'Right':'Wrong'}</span><span class="tag">${q.marks}m</span><span class="mu">Q${i+1} · ${q.score}/${q.marks} · ${esc(q.src)}</span></p>
+ <p><b>${esc(q.q)}</b></p><div class="ans you"><b>Your answer:</b> ${q.user.trim()?esc(q.user):'(not answered)'}</div><div class="ans rt"><b>Correct answer:</b> ${esc(q.ans)}</div></div>`).join('');
+ show('result');
+ $('again').onclick=start; // new random parts, earlier ones avoided
+ $('gohome').onclick=()=>{clearInterval(timer);show('home')}}
+</script></body></html>
